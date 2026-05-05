@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>بازی تطابق کارت</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      width: 100%;
+      height: 100vh;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      text-align: center;
+      gap: 10px;
+      background: #fff;
+    }
+    .header-title {
+      width: 100%;
+      height: 10%;
+      background: #0ff;
+      border: 2px solid #000000;
+      border-radius: 10px;
+      font-size: 20px;
+      color: #000;
+      font-weight: bold;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .main-container { 
+      width: 100%; 
+      height: calc(100% - 10%); 
+      padding: 10px;
+      background: #f0f; 
+      border-radius: 10px; 
+      border: 2px solid #000;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+    }
+    .state-container {
+      width: 100%;
+      height: 50px;
+      background: transparent;
+      border-radius: 10px;
+      font-weight: bold;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      place-items: center;
+      gap: 10px;
+    }
+    .timer, .score, .hearts {
+      width: 100%;
+      height: 100%;
+      background: #fff;
+      color: #000;
+      font-size: 15px;
+      border-radius: 8px;
+      border: 1px solid #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .game-container { 
+      width: 100%; 
+      height: calc(100% - 50px); 
+      display: grid; 
+      grid-template-columns: repeat(5, 1fr); 
+      gap: 10px; 
+      background: transparent;
+      pointer-events: none; 
+    }
+    .card {
+      background: #fff; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      font-size: 20px; 
+      color: #000; 
+      cursor: pointer; 
+      border-radius: 10px;
+      position: relative;
+      transition: transform 0.7s;
+      transform-style: preserve-3d; 
+    }
+    .front, .back { 
+      position: absolute; 
+      width: 100%; 
+      height: 100%; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      border-radius: 10px;
+      border: 1px solid #000;
+      backface-visibility: hidden; 
+    }
+    .front { 
+      background: #0ff;
+    }
+    .back { 
+      background: #fff;
+      transform: rotateY(180deg); 
+    }
+    .flipped { 
+      transform: rotateY(180deg); 
+    }
+    .matched .back {
+      background: #dddddd;
+      border: 2px solid #00ff00;
+      opacity: 0.8;
+    }
+    .popup,
+    .game-over-popup { 
+      display: none; 
+      position: absolute;
+      background: #fff; 
+      color: #000;
+      padding: 10px; 
+      border-radius: 10px;
+      border: 2px solid #000;
+      text-align: center; 
+      font-size: 20px; 
+      width: 80%; 
+      z-index: 100; 
+    }
+    .resetBtn { 
+      background: #0ff; 
+      color: #000; 
+      font-size: 15px;
+      font-weight: bold;
+      border-radius: 10px; 
+      cursor: pointer; 
+      border: 2px solid #000;
+      padding: 10px;
+    }
+    .overlay { 
+      position: absolute;
+      width: 100%; 
+      height: 100%; 
+      background: rgba(0, 0, 0, 0.8); 
+      z-index: 99; 
+      display: block;
+    }
+    .start-btn { 
+      position: absolute;
+      background: #0ff; 
+      color: #000000; 
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 10px; 
+      cursor: pointer; 
+      border: 2px solid #000;
+      padding: 10px;
+      z-index: 101; 
+    }
+  </style>
+</head>
+<body>
+
+    <div class="header-title">بازی کارت‌های مشابه 🎮</div>
+
+    <div class="main-container">
+        <div class="state-container">
+            <div class="timer" id="timer">150 ثانیه</div>
+            <div class="score" id="score">امتیاز: 0</div>
+            <div class="hearts" id="hearts">❤️❤️❤️</div>
+        </div>
+        <div class="game-container"></div>
+        <div class="popup" id="popup">
+            <h3 id="popup-message"></h3>
+            <button class="resetBtn" id="resetBtn" onclick="resetGame()">شروع مجدد 🔃</button>
+        </div>
+        <div class="overlay" id="overlay"></div>
+        <button class="start-btn" id="startBtn" onclick="startGame()">شروع</button>
+        <div class="game-over-popup" id="gameOverPopup">
+            <div>جان شما تمام شد و دیگر نمی‌توانید بازی کنید 💔</div>
+        </div>
+    </div>
+    <script>
+        // تعریف گروه‌های ایموجی
+        const emojiGroups = {
+            fruits: ["🍊", "🍋", "🍓", "🍇", "🥝", "🍍", "🍌", "🥭", "🍒", "🍑", "🍉", "🍐", "🥥", "🥑", "🍎", "🫐", "🍈", "🫒", "🍅", "🌶️"],
+            emotions: ["😉", "😊", "😍", "😎", "🥺", "😅", "😜", "😃", "😂", "🤣", "😋", "😏", "😇", "🙃", "🤯", "🥰", "😌", "🤩", "😘", "🤪"],
+            animals: ["🐶", "🐱", "🐭", "🐹", "🐰", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🦄", "🐺", "🐗", "🦊", "🐴", "🐔"],
+            hearts: ["❤️‍🔥", "❤️", "💗", "♥️", "🩷", "💓", "💚", "🤍", "🖤", "💜", "💛", "💙", "🧡", "🤎", "🩵", "💖", "💞", "💝", "💘", "❣️"]
+        };
+
+        const timeLimit = 150;
+        let currentEmojis, flippedCards = [], matchedCards = 0, timeLeft, timerInterval, score = 0, hearts = 3, gameEnded = false;
+        const gameContainer = document.querySelector(".game-container"), popup = document.getElementById("popup");
+        const timerDisplay = document.getElementById("timer"), scoreDisplay = document.getElementById("score");
+        const popupMessage = document.getElementById("popup-message"), overlay = document.getElementById("overlay");
+        const startBtn = document.getElementById("startBtn"), heartsDisplay = document.getElementById("hearts");
+        const gameOverPopup = document.getElementById("gameOverPopup"), resetBtn = document.getElementById("resetBtn");
+
+        // تابع برای هم‌زدن (shuffle) آرایه
+        const shuffle = array => {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        };
+
+        // تابع برای ایجاد کارت‌ها
+        const createCards = () => {
+            gameContainer.innerHTML = "";
+            const groupKeys = Object.keys(emojiGroups);
+            const randomGroup = groupKeys[Math.floor(Math.random() * groupKeys.length)];
+            currentEmojis = emojiGroups[randomGroup];
+
+            const cardsArray = shuffle([...currentEmojis, ...currentEmojis]);
+            cardsArray.forEach(emoji => {
+              const card = document.createElement("div");
+              card.className = "card";
+              card.innerHTML = `<div class="back">${emoji}</div><div class="front">❓</div>`;
+              card.addEventListener("click", () => flipCard(card));
+              gameContainer.appendChild(card);
+            });
+        };
+
+        const flipCard = card => {
+            if (flippedCards.length === 2 || card.classList.contains("flipped") || card.classList.contains("matched")) return;
+            card.classList.add("flipped");
+            const front = card.querySelector(".front");
+            setTimeout(() => { front.textContent = ""; }, 300); // علامت ❓ حذف میشه
+            flippedCards.push(card);
+            if (flippedCards.length === 2) checkMatch();
+        };
+
+        const checkMatch = () => {
+            const [c1, c2] = flippedCards;
+            const back1 = c1.querySelector(".back").textContent;
+            const back2 = c2.querySelector(".back").textContent;
+            const isMatch = back1 === back2;
+            setTimeout(() => {
+              if (isMatch) {
+                c1.classList.add("matched");
+                c2.classList.add("matched");
+                matchedCards += 2;
+                score += 10; // ✅ امتیاز برای مچ موفق
+              } else {
+                c1.classList.remove("flipped");
+                c2.classList.remove("flipped");
+                score = Math.max(0, score - 5); // ❌ جریمه اشتباه
+              }
+              scoreDisplay.textContent = `امتیاز: ${score}`;
+              flippedCards = [];
+              checkWin();
+            }, 700);
+        };
+
+        // تابع برای شروع تایمر
+        const startTimer = () => {
+            timeLeft = timeLimit;
+            timerDisplay.textContent = `${timeLeft} ثانیه`;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerDisplay.textContent = `${timeLeft} ثانیه`;
+                if (timeLeft === 0) endGame(false);
+            }, 1000);
+        };
+        
+        const checkWin = () => {
+            const totalCards = currentEmojis.length * 2;
+            if (matchedCards === totalCards) {
+                endGame(true);
+            }
+        };
+
+        // تابع برای پایان بازی
+        const endGame = (won) => {
+            clearInterval(timerInterval);
+            if (!won) {
+                hearts--;
+                heartsDisplay.textContent = "❤️".repeat(hearts);
+                if (hearts === 0) {
+                    gameEnded = true;
+                    showGameOverPopup();
+                    return;
+                }
+            }
+            popupMessage.textContent = won ? `🎉 تبریک! شما بازی را بردید! امتیاز: ${score}` : "⏰ متأسفم! زمان شما تمام شد.";
+            popup.style.display = "block";
+            overlay.style.display = "block";
+            gameContainer.style.pointerEvents = "none";
+        };
+
+        // نمایش پاپ‌آپ پایان بازی
+        const showGameOverPopup = () => {
+            popup.style.display = "none";
+            overlay.style.display = "block";
+            gameOverPopup.style.display = "block";
+            resetBtn.style.display = "none"; // دکمه "شروع مجدد" غیرفعال می‌شود
+            heartsDisplay.textContent = "💔💔💔"; // نمایش قلب‌های شکسته
+        };
+
+        // تابع برای ریست کردن بازی
+        const resetGame = () => {
+            if (gameEnded) return;
+            clearInterval(timerInterval);
+            matchedCards = 0;
+            score = 0;
+            scoreDisplay.textContent = `امتیاز: ${score}`;
+            popup.style.display = "none";
+            overlay.style.display = "none";
+            gameContainer.style.pointerEvents = "auto";
+            createCards();
+            startTimer();
+        };
+
+        // تابع برای شروع بازی
+        const startGame = () => {
+            if (gameEnded) return;
+            startBtn.style.display = "none";
+            overlay.style.display = "none";
+            gameContainer.style.pointerEvents = "auto";
+            startTimer();
+        };
+
+        createCards(); // شروع بازی به محض بارگذاری صفحه
+    </script>
+</body>
+</html>
