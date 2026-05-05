@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #fff;
+            overflow: hidden;
+            direction: rtl;
+        }
+        #gameCanvas {
+            border: 1px solid #000;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // تنظیمات اولیه
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const WIDTH = canvas.width;
+        const HEIGHT = canvas.height;
+
+        // رنگ‌ها
+        const WHITE = "#FFFFFF";
+        const BLACK = "#000000";
+        const RED = "#C80000";
+        const GRAY = "#969696";
+        const DARK_GRAY = "#787878";
+        const LIGHT_GRAY = "#C8C8C8";
+        const SHADOW = "rgba(50, 50, 50, 0.4)";
+
+        // متغیرهای ماشین
+        let carRadius = 30;
+        let carMaxSpeed = 4;
+        let carAcceleration = 0.4;
+        let carFriction = 0.04;
+        let carAngle = 0;
+        let carVelocityX = 0;
+        let carVelocityY = 0;
+        let carX = WIDTH / 2;
+        let carY = HEIGHT / 2;
+
+        // جوی‌استیک
+        const joystickCenter = { x: WIDTH / 2, y: HEIGHT - 100 };
+        const joystickRadius = 75;
+        const joystickHandleRadius = 30;
+        let joystickActive = false;
+        let joystickX = joystickCenter.x;
+        let joystickY = joystickCenter.y;
+
+        // متغیرهای طراحی پیست
+        let drawing = false;
+        let trackPoints = [];
+        const trackThickness = 70;
+        const trackBorderThickness = 5;
+        let gameStarted = false;
+        const MIN_DISTANCE = 5;
+
+        // تابع بررسی اینکه آیا ماشین روی جاده پیست هست یا نه
+        function isOnTrack(x, y) {
+            if (!trackPoints.length) return true;
+            for (let i = 0; i < trackPoints.length - 1; i++) {
+                const p1 = trackPoints[i];
+                const p2 = trackPoints[i + 1];
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const lengthSq = dx * dx + dy * dy;
+                if (lengthSq === 0) continue;
+                const t = Math.max(0, Math.min(1, ((x - p1.x) * dx + (y - p1.y) * dy) / lengthSq));
+                const projX = p1.x + t * dx;
+                const projY = p1.y + t * dy;
+                const dist = Math.hypot(x - projX, y - projY);
+                if (dist <= trackThickness / 2) return true;
+            }
+            return false;
+        }
+
+        // پیدا کردن نزدیک‌ترین نقطه روی پیست
+        function findClosestPointOnTrack(x, y) {
+            if (!trackPoints.length) return { x, y };
+            let closestDist = Infinity;
+            let closestPoint = trackPoints[0];
+            for (let i = 0; i < trackPoints.length - 1; i++) {
+                const p1 = trackPoints[i];
+                const p2 = trackPoints[i + 1];
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const lengthSq = dx * dx + dy * dy;
+                if (lengthSq === 0) continue;
+                const t = Math.max(0, Math.min(1, ((x - p1.x) * dx + (y - p1.y) * dy) / lengthSq));
+                const projX = p1.x + t * dx;
+                const projY = p1.y + t * dy;
+                const dist = Math.hypot(x - projX, y - projY);
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    closestPoint = { x: projX, y: projY };
+                }
+            }
+            return closestPoint;
+        }
+
+        // تابع مدیریت برخورد
+        function handleCollision(newX, newY, oldX, oldY) {
+            const velocity = { x: carVelocityX, y: carVelocityY };
+            const speed = Math.hypot(velocity.x, velocity.y);
+            if (speed === 0 || isOnTrack(newX, newY)) {
+                return { x: newX, y: newY, vx: carVelocityX, vy: carVelocityY };
+            }
+
+            const closest = findClosestPointOnTrack(newX, newY);
+            let normal = { x: newX - closest.x, y: newY - closest.y };
+            const normalLength = Math.hypot(normal.x, normal.y);
+            normal.x /= normalLength || 1; // جلوگیری از تقسیم بر صفر
+            normal.y /= normalLength || 1;
+
+            const dotProduct = velocity.x * normal.x + velocity.y * normal.y;
+            const velocityTangent = {
+                x: velocity.x - dotProduct * normal.x,
+                y: velocity.y - dotProduct * normal.y
+            };
+            const velocityNormal = { x: dotProduct * normal.x, y: dotProduct * normal.y };
+            const newVelocity = {
+                x: velocityTangent.x * 0.95 - velocityNormal.x * 0.3,
+                y: velocityTangent.y * 0.95 - velocityNormal.y * 0.3
+            };
+
+            let correctedX = newX;
+            let correctedY = newY;
+            const correctionFactor = carRadius * 0.1;
+            while (!isOnTrack(correctedX, correctedY)) {
+                correctedX -= normal.x * correctionFactor;
+                correctedY -= normal.y * correctionFactor;
+            }
+
+            return { x: correctedX, y: correctedY, vx: newVelocity.x, vy: newVelocity.y };
+        }
+
+        // کنترل طراحی پیست و جوی‌استیک
+        function updateJoystickOrTrackPosition(x, y, isStart) {
+            if (!gameStarted) {
+                if (isStart) {
+                    drawing = true;
+                    trackPoints.push({ x, y });
+                } else if (drawing) {
+                    const lastPoint = trackPoints[trackPoints.length - 1];
+                    if (Math.hypot(x - lastPoint.x, y - lastPoint.y) > MIN_DISTANCE) {
+                        trackPoints.push({ x, y });
+                    }
+                }
+            } else {
+                const dx = x - joystickCenter.x;
+                const dy = y - joystickCenter.y;
+                const distance = Math.hypot(dx, dy);
+                if (distance > joystickRadius) {
+                    const angle = Math.atan2(dy, dx);
+                    joystickX = joystickCenter.x + Math.cos(angle) * joystickRadius;
+                    joystickY = joystickCenter.y + Math.sin(angle) * joystickRadius;
+                } else {
+                    joystickX = x;
+                    joystickY = y;
+                }
+            }
+        }
+
+        // رویدادهای ماوس
+        canvas.addEventListener("mousedown", (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            if (!gameStarted) {
+                updateJoystickOrTrackPosition(mx, my, true);
+            } else {
+                const distance = Math.hypot(mx - joystickCenter.x, my - joystickCenter.y);
+                if (distance <= joystickRadius) {
+                    joystickActive = true;
+                    updateJoystickOrTrackPosition(mx, my);
+                }
+            }
+        });
+
+        canvas.addEventListener("mousemove", (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            if (!gameStarted && drawing) {
+                updateJoystickOrTrackPosition(mx, my, false);
+            } else if (joystickActive) {
+                updateJoystickOrTrackPosition(mx, my);
+            }
+        });
+
+        canvas.addEventListener("mouseup", () => {
+            if (!gameStarted && drawing) {
+                drawing = false;
+                if (trackPoints.length > 1) {
+                    const firstPoint = trackPoints[0];
+                    const lastPoint = trackPoints[trackPoints.length - 1];
+                    if (Math.hypot(firstPoint.x - lastPoint.x, firstPoint.y - lastPoint.y) > 10) {
+                        trackPoints.push(firstPoint);
+                    }
+                    carX = trackPoints[0].x;
+                    carY = trackPoints[0].y;
+                    gameStarted = true;
+                }
+            } else if (gameStarted) {
+                joystickActive = false;
+                joystickX = joystickCenter.x;
+                joystickY = joystickCenter.y;
+            }
+        });
+
+        // رویدادهای لمسی برای موبایل
+        canvas.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const mx = touch.clientX - rect.left;
+            const my = touch.clientY - rect.top;
+            if (!gameStarted) {
+                updateJoystickOrTrackPosition(mx, my, true);
+            } else {
+                const distance = Math.hypot(mx - joystickCenter.x, my - joystickCenter.y);
+                if (distance <= joystickRadius) {
+                    joystickActive = true;
+                    updateJoystickOrTrackPosition(mx, my);
+                }
+            }
+        });
+
+        canvas.addEventListener("touchmove", (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const mx = touch.clientX - rect.left;
+            const my = touch.clientY - rect.top;
+            if (!gameStarted && drawing) {
+                updateJoystickOrTrackPosition(mx, my, false);
+            } else if (joystickActive) {
+                updateJoystickOrTrackPosition(mx, my);
+            }
+        });
+
+        canvas.addEventListener("touchend", () => {
+            if (!gameStarted && drawing) {
+                drawing = false;
+                if (trackPoints.length > 1) {
+                    const firstPoint = trackPoints[0];
+                    const lastPoint = trackPoints[trackPoints.length - 1];
+                    if (Math.hypot(firstPoint.x - lastPoint.x, firstPoint.y - lastPoint.y) > 10) {
+                        trackPoints.push(firstPoint);
+                    }
+                    carX = trackPoints[0].x;
+                    carY = trackPoints[0].y;
+                    gameStarted = true;
+                }
+            } else if (gameStarted) {
+                joystickActive = false;
+                joystickX = joystickCenter.x;
+                joystickY = joystickCenter.y;
+            }
+        });
+
+        // حلقه اصلی بازی
+        function gameLoop() {
+            if (gameStarted) {
+                if (joystickActive) {
+                    const dx = joystickX - joystickCenter.x;
+                    const dy = joystickY - joystickCenter.y;
+                    const distance = Math.hypot(dx, dy);
+                    if (distance > 0) {
+                        const angle = Math.atan2(dy, dx);
+                        const accelFactor = Math.min(distance / joystickRadius, 1);
+                        carVelocityX += Math.cos(angle) * carAcceleration * accelFactor;
+                        carVelocityY += Math.sin(angle) * carAcceleration * accelFactor;
+                        const targetAngle = (angle * 180 / Math.PI) - 90;
+                        let angleDiff = (targetAngle - carAngle) % 360;
+                        if (angleDiff > 180) angleDiff -= 360;
+                        carAngle += angleDiff * 0.15;
+                    }
+                } else {
+                    carVelocityX *= (1 - carFriction);
+                    carVelocityY *= (1 - carFriction);
+                }
+
+                const speed = Math.hypot(carVelocityX, carVelocityY);
+                if (speed > carMaxSpeed) {
+                    carVelocityX = carVelocityX * carMaxSpeed / speed;
+                    carVelocityY = carVelocityY * carMaxSpeed / speed;
+                }
+
+                const newCarX = carX + carVelocityX;
+                const newCarY = carY + carVelocityY;
+                const collisionResult = handleCollision(newCarX, newCarY, carX, carY);
+                carX = collisionResult.x;
+                carY = collisionResult.y;
+                carVelocityX = collisionResult.vx;
+                carVelocityY = collisionResult.vy;
+            }
+
+            // رسم صفحه
+            ctx.fillStyle = WHITE;
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            if (!gameStarted) {
+                if (trackPoints.length > 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(trackPoints[0].x, trackPoints[0].y);
+                    for (let i = 1; i < trackPoints.length; i++) {
+                        ctx.lineTo(trackPoints[i].x, trackPoints[i].y);
+                    }
+                    ctx.strokeStyle = DARK_GRAY;
+                    ctx.lineWidth = trackBorderThickness;
+                    ctx.stroke();
+                }
+            } else {
+                if (trackPoints.length > 1) {
+                    // رسم پیست اصلی
+                    ctx.beginPath();
+                    ctx.moveTo(trackPoints[0].x, trackPoints[0].y);
+                    for (let i = 1; i < trackPoints.length; i++) {
+                        ctx.lineTo(trackPoints[i].x, trackPoints[i].y);
+                    }
+                    ctx.closePath();
+                    ctx.strokeStyle = LIGHT_GRAY;
+                    ctx.lineWidth = trackThickness;
+                    ctx.stroke();
+
+                    // رسم لبه‌ها
+                    ctx.beginPath();
+                    ctx.moveTo(trackPoints[0].x, trackPoints[0].y);
+                    for (let i = 1; i < trackPoints.length; i++) {
+                        ctx.lineTo(trackPoints[i].x, trackPoints[i].y);
+                    }
+                    ctx.closePath();
+                    ctx.strokeStyle = DARK_GRAY;
+                    ctx.lineWidth = trackBorderThickness;
+                    ctx.stroke();
+                }
+
+                // رسم سایه ماشین
+                ctx.beginPath();
+                ctx.ellipse(carX + 10, carY + 10, carRadius, carRadius, 0, 0, Math.PI * 2);
+                ctx.fillStyle = SHADOW;
+                ctx.fill();
+
+                // رسم ماشین
+                ctx.save();
+                ctx.translate(carX, carY);
+                ctx.rotate((carAngle * Math.PI) / 180);
+                ctx.fillStyle = RED;
+                ctx.fillRect(-10, -20, 20, 40);
+                ctx.fillStyle = BLACK;
+                ctx.beginPath();
+                ctx.arc(-10, -20, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(10, -20, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(-10, 20, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(10, 20, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // رسم جوی‌استیک
+                ctx.beginPath();
+                ctx.arc(joystickCenter.x, joystickCenter.y, joystickRadius, 0, Math.PI * 2);
+                ctx.strokeStyle = GRAY;
+                ctx.lineWidth = 5;
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(joystickX, joystickY, joystickHandleRadius, 0, Math.PI * 2);
+                ctx.fillStyle = RED;
+                ctx.fill();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+
+        // خروج با کلید Escape (فقط برای دسکتاپ)
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") window.close();
+        });
+    </script>
+</body>
+</html>
