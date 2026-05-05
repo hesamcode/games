@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Football Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #fff;
+        }
+
+        #gameCanvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // تنظیمات اولیه
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const WIDTH = canvas.width;
+        const HEIGHT = canvas.height;
+
+        // ثابت‌ها
+        const WHITE = "#FFFFFF";
+        const BLACK = "#000000";
+        const RED = "#FF0000";
+        const BLUE = "#0000FF";
+        const FIELD_WIDTH = WIDTH * 0.9;
+        const FIELD_HEIGHT = HEIGHT * 0.7;
+        const FIELD_X = (WIDTH - FIELD_WIDTH) / 2;
+        const FIELD_Y = (HEIGHT - FIELD_HEIGHT) / 2;
+
+        const PLAYER_SIZE = 20;
+        const BALL_SIZE = 10;
+        const GOAL_WIDTH = 150;
+        const GOAL_HEIGHT = 30;
+        const GOAL_BAR_WIDTH = 5;
+        const JOYSTICK_RADIUS = 40;
+        const BALL_FRICTION = 0.98;
+        const playerSpeed = 6;
+
+        // متغیرهای بازی
+        let playerRedX = FIELD_X + FIELD_WIDTH / 2;
+        let playerRedY = FIELD_Y + FIELD_HEIGHT - 50;
+        let playerBlueX = FIELD_X + FIELD_WIDTH / 2;
+        let playerBlueY = FIELD_Y + 50;
+        let ballX = FIELD_X + FIELD_WIDTH / 2;
+        let ballY = FIELD_Y + FIELD_HEIGHT / 2;
+        let ballSpeedX = 0;
+        let ballSpeedY = 0;
+        let redScore = 0;
+        let blueScore = 0;
+
+        // جوی‌استیک قرمز
+        const JOYSTICK_RED_X = WIDTH / 2;
+        const JOYSTICK_RED_Y = HEIGHT - 60;
+        let joystickRedPos = { x: JOYSTICK_RED_X, y: JOYSTICK_RED_Y };
+        let joystickRedActive = false;
+        let redTouchId = null;
+
+        // جوی‌استیک آبی
+        const JOYSTICK_BLUE_X = WIDTH / 2;
+        const JOYSTICK_BLUE_Y = 60;
+        let joystickBluePos = { x: JOYSTICK_BLUE_X, y: JOYSTICK_BLUE_Y };
+        let joystickBlueActive = false;
+        let blueTouchId = null;
+
+        // نگه داشتن داخل زمین
+        function keepInsideField(x, y, size, speedX = 0, speedY = 0) {
+            x = Math.max(FIELD_X + size, Math.min(FIELD_X + FIELD_WIDTH - size, x));
+            y = Math.max(FIELD_Y + size, Math.min(FIELD_Y + FIELD_HEIGHT - size, y));
+            if (x <= FIELD_X + size || x >= FIELD_X + FIELD_WIDTH - size) speedX *= -0.8;
+            if (y <= FIELD_Y + size || y >= FIELD_Y + FIELD_HEIGHT - size) speedY *= -0.8;
+            return [x, y, speedX, speedY];
+        }
+
+        // رسم دایره
+        function drawCircle(x, y, radius, color, outline = false) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            if (outline) {
+                ctx.strokeStyle = BLACK;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+            ctx.closePath();
+        }
+
+        // رسم مستطیل
+        function drawRect(x, y, width, height, color, outline = false) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, width, height);
+            if (outline) {
+                ctx.strokeStyle = BLACK;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x, y, width, height);
+            }
+        }
+
+        // رسم خط
+        function drawLine(x1, y1, x2, y2, color, width) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        // مدیریت ورودی لمسی
+        canvas.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            const touches = e.changedTouches;
+            for (let touch of touches) {
+                const mx = touch.clientX;
+                const my = touch.clientY;
+                if (Math.hypot(mx - JOYSTICK_RED_X, my - JOYSTICK_RED_Y) < JOYSTICK_RADIUS && !redTouchId) {
+                    redTouchId = touch.identifier;
+                    joystickRedActive = true;
+                } else if (Math.hypot(mx - JOYSTICK_BLUE_X, my - JOYSTICK_BLUE_Y) < JOYSTICK_RADIUS && !blueTouchId) {
+                    blueTouchId = touch.identifier;
+                    joystickBlueActive = true;
+                }
+            }
+        });
+
+        canvas.addEventListener("touchmove", (e) => {
+            e.preventDefault();
+            const touches = e.touches;
+            for (let touch of touches) {
+                const mx = touch.clientX;
+                const my = touch.clientY;
+                if (touch.identifier === redTouchId && joystickRedActive) {
+                    let dx = mx - JOYSTICK_RED_X;
+                    let dy = my - JOYSTICK_RED_Y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist > JOYSTICK_RADIUS) {
+                        dx = dx * JOYSTICK_RADIUS / dist;
+                        dy = dy * JOYSTICK_RADIUS / dist;
+                    }
+                    joystickRedPos = { x: JOYSTICK_RED_X + dx, y: JOYSTICK_RED_Y + dy };
+                } else if (touch.identifier === blueTouchId && joystickBlueActive) {
+                    let dx = mx - JOYSTICK_BLUE_X;
+                    let dy = my - JOYSTICK_BLUE_Y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist > JOYSTICK_RADIUS) {
+                        dx = dx * JOYSTICK_RADIUS / dist;
+                        dy = dy * JOYSTICK_RADIUS / dist;
+                    }
+                    joystickBluePos = { x: JOYSTICK_BLUE_X + dx, y: JOYSTICK_BLUE_Y + dy };
+                }
+            }
+        });
+
+        canvas.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            const touches = e.changedTouches;
+            for (let touch of touches) {
+                if (touch.identifier === redTouchId) {
+                    joystickRedActive = false;
+                    joystickRedPos = { x: JOYSTICK_RED_X, y: JOYSTICK_RED_Y };
+                    redTouchId = null;
+                } else if (touch.identifier === blueTouchId) {
+                    joystickBlueActive = false;
+                    joystickBluePos = { x: JOYSTICK_BLUE_X, y: JOYSTICK_BLUE_Y };
+                    blueTouchId = null;
+                }
+            }
+        });
+
+        // تابع کمکی برای برخورد مستطیل و دایره
+        function rectCircleCollision(rect, circleX, circleY, radius) {
+            const distX = Math.abs(circleX - (rect.x + rect.w / 2));
+            const distY = Math.abs(circleY - (rect.y + rect.h / 2));
+            if (distX > (rect.w / 2 + radius) || distY > (rect.h / 2 + radius)) return false;
+            if (distX <= rect.w / 2 || distY <= rect.h / 2) return true;
+            const dx = distX - rect.w / 2;
+            const dy = distY - rect.h / 2;
+            return (dx * dx + dy * dy <= radius * radius);
+        }
+
+        // حلقه اصلی بازی
+        function gameLoop() {
+            // حرکت بازیکن قرمز
+            if (joystickRedActive) {
+                const dx = joystickRedPos.x - JOYSTICK_RED_X;
+                const dy = joystickRedPos.y - JOYSTICK_RED_Y;
+                if (Math.abs(dx) > 10) playerRedX += playerSpeed * (dx / JOYSTICK_RADIUS);
+                if (Math.abs(dy) > 10) playerRedY += playerSpeed * (dy / JOYSTICK_RADIUS);
+            }
+            [playerRedX, playerRedY] = keepInsideField(playerRedX, playerRedY, PLAYER_SIZE);
+
+            // حرکت بازیکن آبی
+            if (joystickBlueActive) {
+                const dx = joystickBluePos.x - JOYSTICK_BLUE_X;
+                const dy = joystickBluePos.y - JOYSTICK_BLUE_Y;
+                if (Math.abs(dx) > 10) playerBlueX += playerSpeed * (dx / JOYSTICK_RADIUS);
+                if (Math.abs(dy) > 10) playerBlueY += playerSpeed * (dy / JOYSTICK_RADIUS);
+            }
+            [playerBlueX, playerBlueY] = keepInsideField(playerBlueX, playerBlueY, PLAYER_SIZE);
+
+            // حرکت توپ
+            ballX += ballSpeedX;
+            ballY += ballSpeedY;
+            ballSpeedX *= BALL_FRICTION;
+            ballSpeedY *= BALL_FRICTION;
+            if (Math.abs(ballSpeedX) < 0.1 && Math.abs(ballSpeedY) < 0.1) ballSpeedX = ballSpeedY = 0;
+            [ballX, ballY, ballSpeedX, ballSpeedY] = keepInsideField(ballX, ballY, BALL_SIZE, ballSpeedX, ballSpeedY);
+
+            // برخورد با بازیکن‌ها
+            const redRect = { x: playerRedX - PLAYER_SIZE, y: playerRedY - PLAYER_SIZE, w: PLAYER_SIZE * 2, h: PLAYER_SIZE * 2 };
+            const blueRect = { x: playerBlueX - PLAYER_SIZE, y: playerBlueY - PLAYER_SIZE, w: PLAYER_SIZE * 2, h: PLAYER_SIZE * 2 };
+            const ballRect = { x: ballX - BALL_SIZE, y: ballY - BALL_SIZE, w: BALL_SIZE * 2, h: BALL_SIZE * 2 };
+
+            if (rectCircleCollision(redRect, ballX, ballY, BALL_SIZE)) {
+                const angle = Math.atan2(ballY - playerRedY, ballX - playerRedX);
+                ballSpeedX = 10 * Math.cos(angle) * 0.9;
+                ballSpeedY = 10 * Math.sin(angle) * 0.9;
+            }
+            if (rectCircleCollision(blueRect, ballX, ballY, BALL_SIZE)) {
+                const angle = Math.atan2(ballY - playerBlueY, ballX - playerBlueX);
+                ballSpeedX = 15 * Math.cos(angle) * 0.9;
+                ballSpeedY = 15 * Math.sin(angle) * 0.9;
+            }
+
+            // چک کردن گل و برخورد با دروازه‌ها
+            const goalTopOpen = { x: FIELD_X + FIELD_WIDTH / 2 - GOAL_WIDTH / 2 + GOAL_BAR_WIDTH, y: FIELD_Y, w: GOAL_WIDTH - 2 * GOAL_BAR_WIDTH, h: GOAL_HEIGHT };
+            const goalBottomOpen = { x: FIELD_X + FIELD_WIDTH / 2 - GOAL_WIDTH / 2 + GOAL_BAR_WIDTH, y: FIELD_Y + FIELD_HEIGHT - GOAL_HEIGHT, w: GOAL_WIDTH - 2 * GOAL_BAR_WIDTH, h: GOAL_HEIGHT };
+            const goalTopLeftBar = { x: FIELD_X + FIELD_WIDTH / 2 - GOAL_WIDTH / 2, y: FIELD_Y, w: GOAL_BAR_WIDTH, h: GOAL_HEIGHT };
+            const goalTopRightBar = { x: FIELD_X + FIELD_WIDTH / 2 + GOAL_WIDTH / 2 - GOAL_BAR_WIDTH, y: FIELD_Y, w: GOAL_BAR_WIDTH, h: GOAL_HEIGHT };
+            const goalBottomLeftBar = { x: FIELD_X + FIELD_WIDTH / 2 - GOAL_WIDTH / 2, y: FIELD_Y + FIELD_HEIGHT - GOAL_HEIGHT, w: GOAL_BAR_WIDTH, h: GOAL_HEIGHT };
+            const goalBottomRightBar = { x: FIELD_X + FIELD_WIDTH / 2 + GOAL_WIDTH / 2 - GOAL_BAR_WIDTH, y: FIELD_Y + FIELD_HEIGHT - GOAL_HEIGHT, w: GOAL_BAR_WIDTH, h: GOAL_HEIGHT };
+
+            if (rectCircleCollision(goalTopOpen, ballX, ballY, BALL_SIZE) && ballSpeedY < 0 && ballY > FIELD_Y) {
+                redScore++;
+                ballX = FIELD_X + FIELD_WIDTH / 2;
+                ballY = FIELD_Y + FIELD_HEIGHT / 2;
+                ballSpeedX = ballSpeedY = 0;
+                playerRedX = FIELD_X + FIELD_WIDTH / 2;
+                playerRedY = FIELD_Y + FIELD_HEIGHT - 50;
+                playerBlueX = FIELD_X + FIELD_WIDTH / 2;
+                playerBlueY = FIELD_Y + 50;
+            } else if (rectCircleCollision(goalBottomOpen, ballX, ballY, BALL_SIZE) && ballSpeedY > 0 && ballY < FIELD_Y + FIELD_HEIGHT - GOAL_HEIGHT) {
+                blueScore++;
+                ballX = FIELD_X + FIELD_WIDTH / 2;
+                ballY = FIELD_Y + FIELD_HEIGHT / 2;
+                ballSpeedX = ballSpeedY = 0;
+            } else if (rectCircleCollision(goalTopLeftBar, ballX, ballY, BALL_SIZE) || rectCircleCollision(goalBottomLeftBar, ballX, ballY, BALL_SIZE)) {
+                ballSpeedX = -Math.abs(ballSpeedX) * 0.8;
+            } else if (rectCircleCollision(goalTopRightBar, ballX, ballY, BALL_SIZE) || rectCircleCollision(goalBottomRightBar, ballX, ballY, BALL_SIZE)) {
+                ballSpeedX = Math.abs(ballSpeedX) * 0.8;
+            }
+
+            // رسم صفحه
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+            // رسم زمین
+            drawRect(FIELD_X, FIELD_Y, FIELD_WIDTH, FIELD_HEIGHT, WHITE, true);
+            drawCircle(FIELD_X + FIELD_WIDTH / 2, FIELD_Y + FIELD_HEIGHT / 2, 50, WHITE, true);
+            drawLine(FIELD_X + FIELD_WIDTH / 2, FIELD_Y, FIELD_X + FIELD_WIDTH / 2, FIELD_Y + FIELD_HEIGHT, BLACK, 2);
+
+            // رسم دروازه‌ها
+            drawRect(FIELD_X + FIELD_WIDTH / 2 - GOAL_WIDTH / 2, FIELD_Y, GOAL_WIDTH, GOAL_HEIGHT, BLACK);
+            drawRect(goalTopLeftBar.x, goalTopLeftBar.y, goalTopLeftBar.w, goalTopLeftBar.h, BLUE);
+            drawRect(goalTopRightBar.x, goalTopRightBar.y, goalTopRightBar.w, goalTopRightBar.h, BLUE);
+            drawLine(FIELD_X + FIELD_WIDTH / 2 - GOAL_WIDTH / 2 + GOAL_BAR_WIDTH, FIELD_Y + GOAL_HEIGHT, FIELD_X + FIELD_WIDTH / 2 + GOAL_WIDTH / 2 - GOAL_BAR_WIDTH, FIELD_Y + GOAL_HEIGHT, WHITE, 2);
+            drawRect(FIELD_X + FIELD_WIDTH / 2 - GOAL_WIDTH / 2, FIELD_Y + FIELD_HEIGHT - GOAL_HEIGHT, GOAL_WIDTH, GOAL_HEIGHT, BLACK);
+            drawRect(goalBottomLeftBar.x, goalBottomLeftBar.y, goalBottomLeftBar.w, goalBottomLeftBar.h, RED);
+            drawRect(goalBottomRightBar.x, goalBottomRightBar.y, goalBottomRightBar.w, goalBottomRightBar.h, RED);
+            drawLine(FIELD_X + FIELD_WIDTH / 2 - GOAL_WIDTH / 2 + GOAL_BAR_WIDTH, FIELD_Y + FIELD_HEIGHT - GOAL_HEIGHT, FIELD_X + FIELD_WIDTH / 2 + GOAL_WIDTH / 2 - GOAL_BAR_WIDTH, FIELD_Y + FIELD_HEIGHT - GOAL_HEIGHT, WHITE, 2);
+
+            // رسم بازیکن‌ها و توپ
+            drawCircle(playerRedX, playerRedY, PLAYER_SIZE, RED);
+            drawCircle(playerBlueX, playerBlueY, PLAYER_SIZE, BLUE);
+            drawCircle(ballX, ballY, BALL_SIZE, BLACK);
+
+            // رسم امتیازات
+            ctx.font = "20px Arial";
+            ctx.fillStyle = RED;
+            ctx.fillRect(FIELD_X, FIELD_Y - 60, 80, 40);
+            ctx.fillStyle = WHITE;
+            ctx.fillText(redScore, FIELD_X + 40 - ctx.measureText(redScore).width / 2, FIELD_Y - 30);
+            ctx.save();
+            ctx.translate(FIELD_X + FIELD_WIDTH, FIELD_Y + FIELD_HEIGHT + 60);
+            ctx.rotate(Math.PI);
+            ctx.fillStyle = BLUE;
+            ctx.fillRect(0, 0, 80, 40);
+            ctx.fillStyle = WHITE;
+            ctx.fillText(blueScore, 40 - ctx.measureText(blueScore).width / 2, 30);
+            ctx.restore();
+
+            // رسم جوی‌استیک‌ها
+            drawCircle(JOYSTICK_RED_X, JOYSTICK_RED_Y, JOYSTICK_RADIUS, WHITE, true);
+            drawCircle(joystickRedPos.x, joystickRedPos.y, JOYSTICK_RADIUS / 2, RED);
+            drawCircle(JOYSTICK_BLUE_X, JOYSTICK_BLUE_Y, JOYSTICK_RADIUS, WHITE, true);
+            drawCircle(joystickBluePos.x, joystickBluePos.y, JOYSTICK_RADIUS / 2, BLUE);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // شروع بازی
+        gameLoop();
+    </script>
+</body>
+</html>
