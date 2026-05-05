@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>افکت‌های جادویی</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000000;
+        }
+    </style>
+</head>
+<body>
+
+<script>
+    let particles = [];
+
+    function setup() {
+        createCanvas(windowWidth, windowHeight);
+        noStroke();
+    }
+
+    function draw() {
+        background(0, 30); // پس‌زمینه با شفافیت کم برای ایجاد افکت محو شدن
+        for (let i = particles.length - 1; i >= 0; i--) {
+            particles[i].update();
+            particles[i].show();
+            if (particles[i].finished()) {
+                particles.splice(i, 1); // حذف ذراتی که به پایان رسیده‌اند
+            }
+        }
+    }
+
+    function touchMoved() {
+        // ایجاد چندین ذره در موقعیت انگشت
+        for (let i = 0; i < 5; i++) {
+            let p = new Particle(mouseX, mouseY);
+            particles.push(p);
+        }
+        return false; // جلوگیری از حرکت صفحه در موبایل
+    }
+
+    class Particle {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.vx = random(-1, 1); // سرعت افقی تصادفی
+            this.vy = random(-1, 1); // سرعت عمودی تصادفی
+            this.alpha = 255; // مقدار شفافیت اولیه
+            this.size = random(5, 15); // اندازه تصادفی برای ذرات
+            this.color = this.generateNeonColor(); // رنگ نئونی تصادفی
+        }
+
+        finished() {
+            return this.alpha < 0; // بررسی تمام شدن شفافیت
+        }
+
+        update() {
+            this.x += this.vx; // به‌روزرسانی موقعیت افقی
+            this.y += this.vy; // به‌روزرسانی موقعیت عمودی
+            this.alpha -= 2; // کاهش شفافیت برای ایجاد افکت محو شدن
+        }
+
+        show() {
+            fill(...this.color, this.alpha); // تنظیم رنگ و شفافیت
+            ellipse(this.x, this.y, this.size); // رسم دایره به عنوان ذره
+        }
+
+        // تابع برای تولید رنگ‌های نئونی جذاب
+        generateNeonColor() {
+            const neonColors = [
+                [0, 255, 255], // آبی نئون
+                [255, 0, 255], // صورتی نئون
+                [0, 255, 0],   // سبز نئون
+                [255, 255, 0], // زرد نئون
+                [255, 165, 0], // نارنجی نئون
+                [255, 20, 147], // قرمز نئون
+            ];
+            return random(neonColors);
+        }
+    }
+
+    function windowResized() {
+        resizeCanvas(windowWidth, windowHeight); // تنظیم اندازه بوم در صورت تغییر اندازه صفحه
+    }
+</script>
+
+</body>
+</html>
